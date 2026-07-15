@@ -1,0 +1,117 @@
+{
+    "batch_id": "batch_001",
+    "collection_date": "2026-06-16",
+    "capture_method": "rgbd",
+
+    "capture_setup": {
+        "camera": {
+        "camera_model": "Intel RealSense D455",
+        "resolution_width": 640,
+        "resolution_height": 480,
+        "fps": 30,
+        "fx": null,
+        "fy": null,
+        "cx": null,
+        "cy": null,
+        "distortion_model": null,
+        "distortion_coefficients": []
+        },
+
+        "coordinate_system": {
+            "origin": "tomato_center",
+            "x_axis": "right",
+            "y_axis": "up",
+            "z_axis": "toward_camera",
+            "units": "mm"
+        },
+        
+        "camera_pose_relative_to_tomato": {
+            "position_mm": {
+                "x": 0,
+                "y": 0,
+                "z": 800
+            },
+            "rotation_deg": {
+                "roll": 0,
+                "pitch": 0,
+                "yaw": 180
+            },
+            "notes": "Camera centered in front of tomato."
+        },
+        
+        "mounting_poses": [
+            {
+                "mounting_pose_id": "stem_down",
+                "description": "Tomato placed with the stem side down on the turntable."
+            },
+            {
+                "mounting_pose_id": "stem_facing_camera",
+                "description": "Tomato placed on its side with the stem side facing the camera at turntable rotation 0 degrees."
+            }
+        ],
+
+        "rotation_convention": {
+            "rotated_object": "tomato",
+            "camera_is_fixed": true,
+            "positive_rotation_direction": "counterclockwise",
+            "units": "deg"
+        },
+        
+        "planned_views": [
+            {
+                "view_id": "stem_down_deg_0",
+                "mounting_pose_id": "stem_down",
+                "turntable_rotation_deg": 0,
+                "folder_name": "stem_down/deg_0"
+            },
+            {
+                "view_id": "stem_down_deg_120",
+                "mounting_pose_id": "stem_down",
+                "turntable_rotation_deg": 120,
+                "folder_name": "stem_down/deg_120"
+            },
+            {
+                "view_id": "stem_down_deg_240",
+                "mounting_pose_id": "stem_down",
+                "turntable_rotation_deg": 240,
+                "folder_name": "stem_down/deg_240"
+            },
+            {
+                "view_id": "stem_facing_camera_deg_0",
+                "mounting_pose_id": "stem_facing_camera",
+                "turntable_rotation_deg": 0,
+                "folder_name": "stem_facing_camera/deg_0"
+            },
+            {
+                "view_id": "stem_facing_camera_deg_120",
+                "mounting_pose_id": "stem_facing_camera",
+                "turntable_rotation_deg": 120,
+                "folder_name": "stem_facing_camera/deg_120"
+            },
+            {
+                "view_id": "stem_facing_camera_deg_240",
+                "mounting_pose_id": "stem_facing_camera",
+                "turntable_rotation_deg": 240,
+                "folder_name": "stem_facing_camera/deg_240"
+            }
+        ]
+    },
+
+    "slice_protocol": {
+        "enabled": true,
+        "cut_direction": "stem_to_top",
+        "slice_index_convention": {
+            "slice_index_start": 1,
+            "slice_index_1_position": "stem_side"
+        },
+        "slice_positions": [
+            "stem_side",
+            "middle",
+            "top_side"
+        ],
+        "slice_thickness_mm": null,
+        "notes": "Slices are ordered from the stem side toward the top of the tomato."
+    },
+
+    "notes": ""
+}

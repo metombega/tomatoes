@@ -1,0 +1,200 @@
+{
+  "tomato_id": "tomato_0001",
+  "tomato_type": "roman",
+  "source": "supermarket",
+  "batch_id": "batch_001",
+  "collection_date": "2026-06-16",
+
+  "manual_measurements": {
+    "weight_g": 143.2,
+    "perimeter_x_mm": 221.5,
+    "perimeter_y_mm": 341.0,
+    "volume_ml": 132.0,
+    "external_color_score": 4,
+    "external_color_defect": false,
+    "shape_score": 3,
+    "external_defects": [
+      {
+        "type": "bruise",
+        "location": "top",
+        "severity": "mild"
+      }
+    ],
+    "notes": ""
+  },
+
+  "computed_measurements": {
+    "perimeter_x_mm": 221.5,
+    "perimeter_y_mm": 341.0,
+    "volume_ml": 132.0,
+    "volume_method": "mesh",
+    "external_color_score": 4,
+    "symmetry_score": 5,
+    "shape_score": 3,
+    "external_defects": [
+      {
+        "type": "bruise",
+        "location": "top",
+        "severity": "mild",
+        "predicted_internal_defect_probability": 0.88
+      }
+    ],
+    "processing_version": "v1.0",
+    "notes": ""
+  }, // add the mesh and point-cloud
+
+  "captures": [
+    {
+      "capture_id": "tomato_0001_stem_down_deg_0",
+      "orientation": "stem_down",
+      "angle_deg": 0,
+      "rgb_path": "raw/depth/stem_down/deg_0/rgb.png",
+      "point_cloud_path": "raw/depth/stem_down/deg_0/point_cloud.ply",
+      "valid": true,
+      "notes": ""
+    },
+    {
+      "capture_id": "tomato_0001_stem_down_deg_120",
+      "orientation": "stem_down",
+      "angle_deg": 120,
+      "rgb_path": "raw/depth/stem_down/deg_120/rgb.png",
+      "point_cloud_path": "raw/depth/stem_down/deg_120/point_cloud.ply",
+      "valid": true,
+      "notes": ""
+    },
+    {
+      "capture_id": "tomato_0001_stem_down_deg_240",
+      "orientation": "stem_down",
+      "angle_deg": 240,
+      "rgb_path": "raw/depth/stem_down/deg_240/rgb.png",
+      "point_cloud_path": "raw/depth/stem_down/deg_240/point_cloud.ply",
+      "valid": true,
+      "notes": ""
+    },
+    {
+      "capture_id": "tomato_0001_stem_facing_camera_deg_0",
+      "orientation": "stem_facing_camera",
+      "angle_deg": 0,
+      "rgb_path": "raw/depth/stem_facing_camera/deg_0/rgb.png",
+      "point_cloud_path": "raw/depth/stem_facing_camera/deg_0/point_cloud.ply",
+      "valid": true,
+      "notes": ""
+    },
+    {
+      "capture_id": "tomato_0001_stem_facing_camera_deg_120",
+      "orientation": "stem_facing_camera",
+      "angle_deg": 120,
+      "rgb_path": "raw/depth/stem_facing_camera/deg_120/rgb.png",
+      "point_cloud_path": "raw/depth/stem_facing_camera/deg_120/point_cloud.ply",
+      "valid": true,
+      "notes": ""
+    },
+    {
+      "capture_id": "tomato_0001_stem_facing_camera_deg_240",
+      "orientation": "stem_facing_camera",
+      "angle_deg": 240,
+      "rgb_path": "raw/depth/stem_facing_camera/deg_240/rgb.png",
+      "point_cloud_path": "raw/depth/stem_facing_camera/deg_240/point_cloud.ply",
+      "valid": true,
+      "notes": ""
+    }
+  ],
+
+  "videos": [
+    {
+      "video_id": "tomato_0001_video_stem_down",
+      "orientation": "stem_down",
+      "video_path": "raw/video/stem_down/recording.bag",
+      "valid": true,
+      "notes": ""
+    },
+    {
+      "video_id": "tomato_0001_video_stem_facing_camera",
+      "orientation": "stem_facing_camera",
+      "video_path": "raw/video/stem_facing_camera/recording.bag",
+      "valid": true,
+      "notes": ""
+    }
+  ],
+
+  "slices": [
+    {
+      "slice_id": "slice_001",
+      "slice_index": 0,
+      "slice_position": "stem_side",
+      "thickness_mm": 3,
+      "rgb_path": "raw/slices/slice_001.png",
+      "valid": true,
+      "defects": [
+        {
+          "type": "bruise",
+          "severity": "mild",
+          "is_external": true
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "slice_id": "slice_002",
+      "slice_index": 2,
+      "slice_position": "stem_side",
+      "thickness_mm": 3,
+      "rgb_path": "raw/slices/slice_002.png",
+      "valid": true,
+      "defects": [],
+      "notes": ""
+    },
+    {
+      "slice_id": "slice_003",
+      "slice_index": 3,
+      "slice_position": "middle",
+      "thickness_mm": 3,
+      "rgb_path": "raw/slices/slice_003.png",
+      "valid": true,
+      "defects": [
+        {
+          "type": "internal_discoloration",
+          "severity": "mild",
+          "is_external": false
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "slice_id": "slice_004",
+      "slice_index": 4,
+      "slice_position": "middle",
+      "thickness_mm": 3,
+      "rgb_path": "raw/slices/slice_004.png",
+      "valid": true,
+      "defects": [],
+      "notes": ""
+    },
+    {
+      "slice_id": "slice_005",
+      "slice_index": 5,
+      "slice_position": "top_side",
+      "thickness_mm": 3,
+      "rgb_path": "raw/slices/slice_005.png",
+      "valid": true,
+      "defects": [
+        {
+          "type": "crack",
+          "severity": "moderate",
+          "is_external": true
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "slice_id": "slice_006",
+      "slice_index": 6,
+      "slice_position": "top_side",
+      "thickness_mm": 2,
+      "rgb_path": "raw/slices/slice_006.png",
+      "valid": true,
+      "defects": [],
+      "notes": ""
+    }
+  ]
+}

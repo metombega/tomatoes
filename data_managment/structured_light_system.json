@@ -1,0 +1,74 @@
+{
+  "system_id": "structured_light_system_001",
+
+  "camera": {
+    "camera_id": "camera_001",
+    "camera_model": "Intel RealSense D455",
+    "resolution_width": 640,
+    "resolution_height": 480,
+    "fx": null,
+    "fy": null,
+    "cx": null,
+    "cy": null,
+    "distortion_model": null,
+    "distortion_coefficients": []
+  },
+
+  "projector": {
+    "projector_id": "projector_001",
+    "projector_model": null,
+    "resolution_width": null,
+    "resolution_height": null,
+    "fx": null,
+    "fy": null,
+    "cx": null,
+    "cy": null,
+    "distortion_model": null,
+    "distortion_coefficients": []
+  },
+
+  "camera_projector_calibration": {
+    "rotation_matrix": null,
+    "translation_vector_mm": null,
+    "reprojection_error_px": null,
+    "calibration_date": "2026-06-16",
+    "notes": ""
+  },
+
+  "pattern_sequence": {
+    "pattern_sequence_id": "sequence_001",
+    "pattern_type": "fringe",
+    "pattern_count": 4,
+    "patterns": [
+      {
+        "index": 0,
+        "filename": "pattern_000.png",
+        "orientation": "vertical",
+        "phase_shift_deg": 0,
+        "frequency": 1
+      },
+      {
+        "index": 1,
+        "filename": "pattern_001.png",
+        "orientation": "vertical",
+        "phase_shift_deg": 90,
+        "frequency": 1
+      },
+      {
+        "index": 2,
+        "filename": "pattern_002.png",
+        "orientation": "vertical",
+        "phase_shift_deg": 180,
+        "frequency": 1
+      },
+      {
+        "index": 3,
+        "filename": "pattern_003.png",
+        "orientation": "vertical",
+        "phase_shift_deg": 270,
+        "frequency": 1
+      }
+    ]
+  }
+}
+

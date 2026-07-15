@@ -1,0 +1,7 @@
+1. do we want to add video? if yes, do we want mp4 or with depth?
+2. do we want shape_score? how exactly?
+3. color and color defact
+4. discussion in general about scores and where to specify them
+5. defects
+6. raw inputs or .ply
+7. slice_positions
