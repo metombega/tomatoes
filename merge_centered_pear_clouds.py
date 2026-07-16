@@ -36,7 +36,7 @@ Since the rotation direction (sign) of the turntable isn't known a priori,
 both signs are tried and the one that produces better alignment is kept.
 
 Usage:
-    python merge_centered_pear_clouds.py [input_folder] [output_folder]
+    python merge_centered_pear_clouds.py [input_folder] [output_folder] [pattern]
 
 Defaults convert rgbd_photos/try10_centered/tomato_single_view_*.ply into
 rgbd_photos/try10_merged/, writing:
@@ -245,11 +245,12 @@ def merge(pcds):
 def main():
     input_folder = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(INPUT_FOLDER)
     output_folder = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(OUTPUT_FOLDER)
+    pattern = sys.argv[3] if len(sys.argv) > 3 else PATTERN
     output_folder.mkdir(parents=True, exist_ok=True)
 
-    files = sorted(input_folder.glob(PATTERN))
+    files = sorted(input_folder.glob(pattern))
     if len(files) != 4:
-        raise SystemExit(f"Expected 4 files matching {PATTERN!r} in {input_folder}, found {len(files)}")
+        raise SystemExit(f"Expected 4 files matching {pattern!r} in {input_folder}, found {len(files)}")
 
     pcds = [o3d.io.read_point_cloud(str(f)) for f in files]
     for f, pcd in zip(files, pcds):

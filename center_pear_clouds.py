@@ -14,7 +14,7 @@ Pipeline per rgbd_photos/try10/tomato_single_view_*.ply file:
    the pear's centroid sits at the origin.
 
 Usage:
-    python center_pear_clouds.py [input_folder] [rgb_folder] [output_folder]
+    python center_pear_clouds.py [input_folder] [rgb_folder] [output_folder] [pattern]
 
 Defaults convert rgbd_photos/try10/tomato_single_view_*.ply to
 rgbd_photos/try10_centered/tomato_single_view_*.ply, using masks from
@@ -170,11 +170,12 @@ def main():
     input_folder = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(INPUT_FOLDER)
     rgb_folder = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(RGB_FOLDER)
     output_folder = Path(sys.argv[3]) if len(sys.argv) > 3 else Path(OUTPUT_FOLDER)
+    pattern = sys.argv[4] if len(sys.argv) > 4 else PATTERN
     mask_folder = rgb_folder / "rembg_out"
 
-    files = sorted(input_folder.glob(PATTERN))
+    files = sorted(input_folder.glob(pattern))
     if not files:
-        raise SystemExit(f"No files matching {PATTERN!r} found in {input_folder}")
+        raise SystemExit(f"No files matching {pattern!r} found in {input_folder}")
 
     output_folder.mkdir(parents=True, exist_ok=True)
     intrinsic = default_render_intrinsic()
