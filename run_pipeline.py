@@ -27,7 +27,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-INPUT_FOLDER = "rgbd_photos/five_shots"
+INPUT_FOLDER = "rgbd_photos/video_on_ratation_table"
 PLY_PATTERN = "*.ply"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
