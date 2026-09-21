@@ -9,11 +9,25 @@ low-density "bloat" outside the real surface. That's trimmed by dropping
 the lowest-density fraction of reconstructed vertices, then cropping to
 the input cloud's bounding box as a final safety net.
 
-Two more cleanup passes run after that:
+That density trim is deliberately light (see DENSITY_TRIM_QUANTILE): an
+aggressive trim strips the entire unsupported pole cap and leaves a big
+open hole there, while too light a trim leaves a thin unrealistic "spike"
+poking out of the pole (low-density vertices Poisson extrapolated from
+almost no real data). The chosen value keeps the smoothly-curved shoulder
+around the pole while dropping just the spike tip -- what's left is a
+single small, clean hole rather than either extreme.
+
+Three more cleanup passes run after that:
   - small disconnected triangle islands (little blobs disjoint from the
     main tomato surface, also a side effect of Poisson filling sparse
     regions) are dropped, keeping only clusters that are a decent
     fraction of the largest one.
+  - remaining holes (the pole cap, plus small gaps from sparse/noisy
+    coverage elsewhere) are closed with a manual fan triangulation
+    (see close_holes below). Open3D's own o3d.t.geometry fill_holes()
+    was tried first and rejected: on this mesh it intermittently produced
+    runaway vertices (coordinates order 1e30+) or segfaulted outright,
+    so we don't depend on it.
   - Taubin smoothing knocks down high-frequency spikes left by Poisson
     without the shrinkage plain Laplacian smoothing would cause.
 
@@ -24,6 +38,7 @@ Defaults convert rgbd_photos/five_shots_merged/tomato_merged.ply into
 rgbd_photos/five_shots_merged/tomato_mesh.ply.
 """
 
+import collections
 import sys
 from pathlib import Path
 
@@ -43,11 +58,15 @@ NORMAL_MAX_NN = 30
 NORMAL_ORIENT_KNN = 50
 
 POISSON_DEPTH = 9
-DENSITY_TRIM_QUANTILE = 0.02  # drop the sparsest-supported 2% of vertices
+DENSITY_TRIM_QUANTILE = 0.002  # drop only the sparsest-supported 0.2% of vertices
 
 # A connected triangle cluster is dropped unless it has at least this
 # fraction of the largest cluster's triangle count.
 MIN_CLUSTER_SIZE_FRACTION = 0.05
+
+# New hole-closing caps are pushed outward along the local surface normal
+# by this much so they bulge gently instead of sitting perfectly flat.
+HOLE_FILL_BULGE = 0.0015
 
 SMOOTH_ITERATIONS = 10
 TAUBIN_LAMBDA = 0.5
@@ -109,6 +128,102 @@ def remove_small_clusters(mesh: o3d.geometry.TriangleMesh) -> o3d.geometry.Trian
     return mesh
 
 
+def find_boundary_loops(mesh: o3d.geometry.TriangleMesh):
+    """Boundary edges (belonging to exactly one triangle), walked into
+    closed vertex loops. Only simple loops (every vertex touches exactly
+    two boundary edges) are returned -- a vertex shared by more than one
+    hole boundary is left alone rather than guessed at."""
+    edge_count = collections.Counter()
+    for a, b, c in np.asarray(mesh.triangles):
+        for u, v in ((a, b), (b, c), (c, a)):
+            edge_count[(u, v) if u < v else (v, u)] += 1
+    boundary_edges = [e for e, count in edge_count.items() if count == 1]
+
+    adjacency = collections.defaultdict(list)
+    for a, b in boundary_edges:
+        adjacency[a].append(b)
+        adjacency[b].append(a)
+
+    visited = set()
+    loops = []
+    for start in list(adjacency):
+        if start in visited or len(adjacency[start]) != 2:
+            continue
+        loop = [start]
+        visited.add(start)
+        prev, current = None, start
+        closed = True
+        while True:
+            candidates = [n for n in adjacency[current] if n != prev]
+            nxt = start if start in candidates else next(
+                (n for n in candidates if n not in visited and len(adjacency[n]) == 2), None
+            )
+            if nxt is None:
+                closed = False
+                break
+            if nxt == start:
+                break
+            loop.append(nxt)
+            visited.add(nxt)
+            prev, current = current, nxt
+        if closed and len(loop) >= 3:
+            loops.append(loop)
+    return loops
+
+
+def close_holes(mesh: o3d.geometry.TriangleMesh, bulge=HOLE_FILL_BULGE) -> o3d.geometry.TriangleMesh:
+    """Close each boundary loop with a fan of triangles from its centroid,
+    nudged outward along the loop's average vertex normal so the cap
+    bulges gently instead of sitting dead flat."""
+    loops = find_boundary_loops(mesh)
+    if not loops:
+        return mesh
+
+    mesh.compute_vertex_normals()
+    vertices = np.asarray(mesh.vertices).copy()
+    normals = np.asarray(mesh.vertex_normals)
+    triangles = np.asarray(mesh.triangles).tolist()
+
+    for loop in loops:
+        loop_normal = normals[loop].mean(axis=0)
+        loop_normal /= np.linalg.norm(loop_normal)
+        center = vertices[loop].mean(axis=0) + loop_normal * bulge
+        center_idx = len(vertices)
+        vertices = np.vstack([vertices, center])
+
+        n = len(loop)
+        for i in range(n):
+            a, b = loop[i], loop[(i + 1) % n]
+            face_normal = np.cross(vertices[b] - vertices[a], center - vertices[a])
+            # Match winding to the surrounding surface, not the arbitrary loop order.
+            tri = [a, b, center_idx] if np.dot(face_normal, normals[a] + normals[b]) >= 0 else [b, a, center_idx]
+            triangles.append(tri)
+
+    filled = o3d.geometry.TriangleMesh()
+    filled.vertices = o3d.utility.Vector3dVector(vertices)
+    filled.triangles = o3d.utility.Vector3iVector(np.array(triangles))
+    if mesh.has_vertex_colors():
+        colors = np.asarray(mesh.vertex_colors)
+        pad = np.tile(colors.mean(axis=0), (len(vertices) - len(colors), 1))
+        filled.vertex_colors = o3d.utility.Vector3dVector(np.vstack([colors, pad]))
+
+    print(f"Closed {len(loops)} hole(s): {len(mesh.vertices)} -> {len(filled.vertices)} vertices, "
+          f"{len(mesh.triangles)} -> {len(filled.triangles)} triangles")
+    return filled
+
+
+def repair_mesh(mesh: o3d.geometry.TriangleMesh) -> o3d.geometry.TriangleMesh:
+    """Drop degenerate/duplicated geometry and edges shared by more than
+    two triangles (seam artifacts from the 5 registered shots slightly
+    overlapping) before hole-closing, so find_boundary_loops sees clean,
+    simple loops instead of tangled non-manifold junctions."""
+    mesh.remove_degenerate_triangles()
+    mesh.remove_duplicated_triangles()
+    mesh.remove_duplicated_vertices()
+    mesh.remove_non_manifold_edges()
+    return mesh
+
+
 def smooth_mesh(mesh: o3d.geometry.TriangleMesh) -> o3d.geometry.TriangleMesh:
     mesh = mesh.filter_smooth_taubin(
         number_of_iterations=SMOOTH_ITERATIONS, lambda_filter=TAUBIN_LAMBDA, mu=TAUBIN_MU
@@ -128,6 +243,8 @@ def main():
     estimate_oriented_normals(pcd)
     mesh = poisson_mesh(pcd)
     mesh = remove_small_clusters(mesh)
+    mesh = repair_mesh(mesh)
+    mesh = close_holes(mesh)
 
     o3d.io.write_triangle_mesh(str(unsmoothed_path), mesh)
     print(f"Saved unsmoothed mesh: {unsmoothed_path}")
