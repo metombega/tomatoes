@@ -20,17 +20,41 @@ we no longer get to assume the nominal step angles are already known:
      its whole tomato cloud around the fitted axis (pivoting on the
      circle's center) by the angle that brings its own cone peak to the
      reference peak's angular position.
-  3. With every shot now expressed at the same turntable angle, simply
-     concatenate the 5 tomato clouds.
+  3. Fold the 5 rotated shots into one cloud in angular order around the
+     circle (not file order), one at a time. Concatenating them
+     unconditionally would double up near-coincident points wherever two
+     shots see the same patch of surface, since registration is close but
+     not pixel-perfect -- visible as a "double-layered" shell in cross
+     section. A plain closest-point dedup isn't safe here though: at that
+     distance scale it can't tell "this is the same surface point seen
+     twice, at a slightly wrong depth" apart from "this is genuinely the
+     next point over on a continuously-sampled surface", and being wrong
+     in the second case eats real coverage.
+     The distinguishing signal is direction from the tomato's own center:
+     two points that are close together *and* sit along essentially the
+     same ray from center are almost certainly the same physical spot
+     seen twice (registration error mostly reads as a radial/depth
+     offset, not a lateral one); two points that are close together but
+     along noticeably different rays are neighboring surface samples and
+     both should be kept. The merge order is circular (shot 5 is
+     angularly adjacent to shot 1, same as any other consecutive pair),
+     so the restricting also wraps around: 1 restricts 2, 2 restricts 3,
+     ..., 4 restricts 5, and finally 5 restricts 1 -- the shot that went
+     in first unfiltered gets pruned last, against everything else that
+     survived. See dedup_across_shots.
 
 Usage:
-    python merge_tomato_clouds.py [input_folder] [output_folder]
+    python merge_tomato_clouds.py [input_folder] [output_folder] [--no-dedup | --dedup]
 
 Defaults convert rgbd_photos/five_shots_segmented/*_tomato.ply (+ matching
 *_cone.ply) into rgbd_photos/five_shots_merged/tomato_merged.ply (voxel
-downsampled and outlier-cleaned) and tomato_merged_full.ply (every aligned
-point, no downsampling or cleanup), plus a diagnostic render of the fitted
-circle and the before/after alignment.
+downsampled and outlier-cleaned) and tomato_merged_full.ply (deduplicated
+but not downsampled), plus a diagnostic render of the fitted circle and
+the before/after alignment.
+
+The double-layer dedup pass (step 3 above) is on by default
+(DIRECTIONAL_DEDUP_DEFAULT) -- pass --no-dedup to fall back to plain
+concatenation, or --dedup to force it on regardless of the default.
 """
 
 import sys
@@ -39,15 +63,39 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import open3d as o3d
+from scipy.spatial import cKDTree
 
 INPUT_FOLDER = "rgbd_photos/five_shots_segmented"
 OUTPUT_FOLDER = "rgbd_photos/five_shots_merged"
+
+# Whether the directional double-layer dedup (dedup_across_shots) runs at
+# all. Overridable per-run with --dedup / --no-dedup.
+DIRECTIONAL_DEDUP_DEFAULT = True
 
 FINAL_VOXEL_SIZE = 0.0004
 OUTLIER_NB_NEIGHBORS = 30
 OUTLIER_STD_RATIO = 1.5
 RADIUS_OUTLIER_NB_POINTS = 8
 RADIUS_OUTLIER_RADIUS = 0.001
+
+# Cross-shot dedup (see dedup_across_shots). The spatial radius is
+# generous -- large enough to span the few mm of residual misalignment
+# the circle-fit rotation can leave at the tomato's surface (the cone
+# peak's own detection noise, lever-armed out by the ~35-40mm distance
+# between the peak and the tomato) -- because it's the angle check, not
+# this radius, that's doing the real discrimination.
+DEDUP_RADIUS = 0.005
+
+# How close two points' directions from the tomato center must be (in
+# degrees) to count as "the same ray", and so as a depth-duplicate rather
+# than a neighboring surface sample. This is a real tradeoff, not a
+# solved value: looser catches more of the double-layering but starts
+# thinning out genuine coverage right at shot-boundary seams (where both
+# shots' points are naturally sparser, so removing either one leaves a
+# visible gap); tighter protects those seams but lets more double-
+# layering back in. 2 degrees was the best balance found by inspection --
+# revisit if either symptom becomes the more visible problem.
+DEDUP_ANGLE_DEG = 2.0
 
 SHOT_COLORS = [[0.85, 0.2, 0.2], [0.2, 0.65, 0.2], [0.2, 0.4, 0.9], [0.9, 0.6, 0.0], [0.6, 0.2, 0.8]]
 
@@ -110,6 +158,68 @@ def rotate_about_axis(pcd, axis, center, angle_rad):
     return pcd.rotate(R, center=center)
 
 
+def _prune_against(candidate_pts, reference_pts, tomato_center, radius, cos_threshold):
+    """Indices of `candidate_pts` that do NOT have a depth-duplicate in
+    `reference_pts` -- close in distance *and* along essentially the same
+    ray from `tomato_center` (see dedup_across_shots)."""
+    if len(reference_pts) == 0:
+        return np.arange(len(candidate_pts))
+
+    tree = cKDTree(reference_pts)
+    dists, idx = tree.query(candidate_pts, k=1)
+    close = dists < radius
+
+    new_dir = candidate_pts - tomato_center
+    new_dir /= np.linalg.norm(new_dir, axis=1, keepdims=True)
+    old_dir = reference_pts[idx] - tomato_center
+    old_dir /= np.linalg.norm(old_dir, axis=1, keepdims=True)
+    same_ray = np.sum(new_dir * old_dir, axis=1) > cos_threshold
+
+    return np.where(~(close & same_ray))[0]
+
+
+def dedup_across_shots(shot_clouds, tomato_center, radius=DEDUP_RADIUS, angle_deg=DEDUP_ANGLE_DEG):
+    """Fold clouds (already in the desired circular merge order) into
+    one. Each shot is pruned against exactly one neighbor -- the
+    previous shot in the circle, already-pruned -- not against the whole
+    accumulated history: 1 restricts 2, 2 restricts 3, ..., 4 restricts
+    5, and finally 5 restricts 1 (closing the loop, using 5's own
+    already-pruned points, not the other three shots as well).
+
+    This was originally cascading (each shot checked against everything
+    merged so far), which compounds: whichever shot ends up pruned last
+    gets checked against every other shot combined, and lost far more
+    real coverage than intended -- a large, genuine hole, not just the
+    intended double-layer cleanup. Strictly pairwise avoids that.
+
+    A point is dropped as a depth-duplicate if it's close in distance
+    *and* sits along essentially the same ray from `tomato_center` as its
+    match (see the module docstring for why direction, not just
+    distance, is what separates that from a neighboring surface
+    sample)."""
+    cos_threshold = np.cos(np.radians(angle_deg))
+    n = len(shot_clouds)
+
+    kept_clouds = [shot_clouds[0]]
+    for i in range(1, n):
+        prev_pts = np.asarray(kept_clouds[i - 1].points)
+        cur_pts = np.asarray(shot_clouds[i].points)
+        keep = _prune_against(cur_pts, prev_pts, tomato_center, radius, cos_threshold)
+        kept_clouds.append(shot_clouds[i].select_by_index(keep.tolist()))
+
+    first_pts = np.asarray(kept_clouds[0].points)
+    last_pts = np.asarray(kept_clouds[-1].points)
+    keep_first = _prune_against(first_pts, last_pts, tomato_center, radius, cos_threshold)
+    print(f"  closing the loop: shot 1 pruned from {len(first_pts)} to {len(keep_first)} points "
+          f"against shot 5 alone")
+    kept_clouds[0] = kept_clouds[0].select_by_index(keep_first.tolist())
+
+    merged = o3d.geometry.PointCloud()
+    for c in kept_clouds:
+        merged += c
+    return merged
+
+
 def save_overlay(clouds_points, filepath, title, extra=None):
     fig = plt.figure(figsize=(8, 8))
     ax = fig.add_subplot(111, projection="3d")
@@ -146,8 +256,17 @@ def save_circle_diagnostic(peaks, center, radius, normal, e1, e2, filepath):
 
 
 def main():
-    input_folder = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(INPUT_FOLDER)
-    output_folder = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(OUTPUT_FOLDER)
+    args = sys.argv[1:]
+    directional_dedup = DIRECTIONAL_DEDUP_DEFAULT
+    if "--no-dedup" in args:
+        args.remove("--no-dedup")
+        directional_dedup = False
+    if "--dedup" in args:
+        args.remove("--dedup")
+        directional_dedup = True
+
+    input_folder = Path(args[0]) if len(args) > 0 else Path(INPUT_FOLDER)
+    output_folder = Path(args[1]) if len(args) > 1 else Path(OUTPUT_FOLDER)
     output_folder.mkdir(parents=True, exist_ok=True)
 
     stems = sorted({p.name[: -len("_tomato.ply")] for p in input_folder.glob("*_tomato.ply")})
@@ -193,13 +312,25 @@ def main():
     save_overlay(aligned_tomato_points, output_folder / "after_registration.png",
                  "After circle-based turntable-angle alignment")
 
-    merged = o3d.geometry.PointCloud()
-    for s in shots:
-        merged += s["tomato"]
+    merge_order = np.argsort(angles)
+    ordered_stems = [shots[i]["stem"] for i in merge_order]
+    print(f"\nMerge order around the circle: {ordered_stems}")
+
+    total_before = sum(len(s["tomato"].points) for s in shots)
+    if directional_dedup:
+        tomato_center = np.vstack(aligned_tomato_points).mean(axis=0)
+        merged = dedup_across_shots([shots[i]["tomato"] for i in merge_order], tomato_center)
+        print(f"Merged cloud (deduplicated, not downsampled): {len(merged.points)} points "
+              f"(from {total_before} before dedup)")
+    else:
+        merged = o3d.geometry.PointCloud()
+        for i in merge_order:
+            merged += shots[i]["tomato"]
+        print(f"Merged cloud (dedup disabled, plain concatenation): {len(merged.points)} points")
 
     full_path = output_folder / "tomato_merged_full.ply"
     o3d.io.write_point_cloud(str(full_path), merged)
-    print(f"\nMerged cloud (all original points, no downsampling): {len(merged.points)} points -> {full_path}")
+    print(f"  -> {full_path}")
 
     merged = merged.voxel_down_sample(FINAL_VOXEL_SIZE)
     merged, _ = merged.remove_statistical_outlier(nb_neighbors=OUTLIER_NB_NEIGHBORS, std_ratio=OUTLIER_STD_RATIO)
