@@ -27,8 +27,10 @@ Usage:
     python merge_tomato_clouds.py [input_folder] [output_folder]
 
 Defaults convert rgbd_photos/five_shots_segmented/*_tomato.ply (+ matching
-*_cone.ply) into rgbd_photos/five_shots_merged/tomato_merged.ply, plus a
-diagnostic render of the fitted circle and the before/after alignment.
+*_cone.ply) into rgbd_photos/five_shots_merged/tomato_merged.ply (voxel
+downsampled and outlier-cleaned) and tomato_merged_full.ply (every aligned
+point, no downsampling or cleanup), plus a diagnostic render of the fitted
+circle and the before/after alignment.
 """
 
 import sys
@@ -41,11 +43,11 @@ import open3d as o3d
 INPUT_FOLDER = "rgbd_photos/five_shots_segmented"
 OUTPUT_FOLDER = "rgbd_photos/five_shots_merged"
 
-FINAL_VOXEL_SIZE = 0.0012
+FINAL_VOXEL_SIZE = 0.0004
 OUTLIER_NB_NEIGHBORS = 30
 OUTLIER_STD_RATIO = 1.5
 RADIUS_OUTLIER_NB_POINTS = 8
-RADIUS_OUTLIER_RADIUS = 0.003
+RADIUS_OUTLIER_RADIUS = 0.001
 
 SHOT_COLORS = [[0.85, 0.2, 0.2], [0.2, 0.65, 0.2], [0.2, 0.4, 0.9], [0.9, 0.6, 0.0], [0.6, 0.2, 0.8]]
 
@@ -195,13 +197,17 @@ def main():
     for s in shots:
         merged += s["tomato"]
 
+    full_path = output_folder / "tomato_merged_full.ply"
+    o3d.io.write_point_cloud(str(full_path), merged)
+    print(f"\nMerged cloud (all original points, no downsampling): {len(merged.points)} points -> {full_path}")
+
     merged = merged.voxel_down_sample(FINAL_VOXEL_SIZE)
     merged, _ = merged.remove_statistical_outlier(nb_neighbors=OUTLIER_NB_NEIGHBORS, std_ratio=OUTLIER_STD_RATIO)
     merged, _ = merged.remove_radius_outlier(nb_points=RADIUS_OUTLIER_NB_POINTS, radius=RADIUS_OUTLIER_RADIUS)
 
     out_path = output_folder / "tomato_merged.ply"
     o3d.io.write_point_cloud(str(out_path), merged)
-    print(f"\nMerged cloud: {len(merged.points)} points -> {out_path}")
+    print(f"Merged cloud (downsampled + cleaned): {len(merged.points)} points -> {out_path}")
 
 
 if __name__ == "__main__":
