@@ -31,6 +31,13 @@ Three more cleanup passes run after that:
   - Taubin smoothing knocks down high-frequency spikes left by Poisson
     without the shrinkage plain Laplacian smoothing would cause.
 
+After that, the mesh is simplified: quadric decimation collapses it down
+to a fraction of its original triangle count, which -- on top of shrinking
+the file -- rounds off a lot of the remaining small-scale bumpiness by
+construction, since it can no longer represent detail finer than the
+simplified triangle size. A short final smoothing pass cleans up whatever
+new sharp edges decimation introduces.
+
 Usage:
     python mesh_merged_tomato_cloud.py [input.ply] [output.ply]
 
@@ -68,9 +75,21 @@ MIN_CLUSTER_SIZE_FRACTION = 0.05
 # by this much so they bulge gently instead of sitting perfectly flat.
 HOLE_FILL_BULGE = 0.0015
 
-SMOOTH_ITERATIONS = 10
+SMOOTH_ITERATIONS = 40
 TAUBIN_LAMBDA = 0.5
 TAUBIN_MU = -0.53
+
+# Quadric decimation target, as a fraction of the mesh's triangle count
+# after smoothing. Simplification is what actually gets rid of a lot of
+# the remaining fine bumpiness (it physically can't represent detail
+# smaller than the simplified triangles), on top of shrinking the file.
+SIMPLIFY_TRIANGLE_FRACTION = 0.2
+
+# A second Taubin pass to round off the faceted look decimation leaves
+# behind. This needs to be a real pass, not a token cleanup -- a handful
+# of iterations visibly still looked low-poly/crystalline; smoothness
+# kept improving up to ~60 iterations and flattened out after that.
+POST_SIMPLIFY_SMOOTH_ITERATIONS = 60
 
 
 def load_cloud(path: Path) -> o3d.geometry.PointCloud:
@@ -224,12 +243,21 @@ def repair_mesh(mesh: o3d.geometry.TriangleMesh) -> o3d.geometry.TriangleMesh:
     return mesh
 
 
-def smooth_mesh(mesh: o3d.geometry.TriangleMesh) -> o3d.geometry.TriangleMesh:
+def smooth_mesh(mesh: o3d.geometry.TriangleMesh, iterations: int) -> o3d.geometry.TriangleMesh:
     mesh = mesh.filter_smooth_taubin(
-        number_of_iterations=SMOOTH_ITERATIONS, lambda_filter=TAUBIN_LAMBDA, mu=TAUBIN_MU
+        number_of_iterations=iterations, lambda_filter=TAUBIN_LAMBDA, mu=TAUBIN_MU
     )
     mesh.compute_vertex_normals()
     return mesh
+
+
+def simplify_mesh(mesh: o3d.geometry.TriangleMesh, fraction=SIMPLIFY_TRIANGLE_FRACTION) -> o3d.geometry.TriangleMesh:
+    target = max(int(len(mesh.triangles) * fraction), 4)
+    simplified = mesh.simplify_quadric_decimation(target_number_of_triangles=target)
+    simplified.compute_vertex_normals()
+    print(f"Simplified: {len(mesh.vertices)} -> {len(simplified.vertices)} vertices, "
+          f"{len(mesh.triangles)} -> {len(simplified.triangles)} triangles")
+    return simplified
 
 
 def main():
@@ -249,10 +277,12 @@ def main():
     o3d.io.write_triangle_mesh(str(unsmoothed_path), mesh)
     print(f"Saved unsmoothed mesh: {unsmoothed_path}")
 
-    mesh = smooth_mesh(mesh)
+    mesh = smooth_mesh(mesh, SMOOTH_ITERATIONS)
+    mesh = simplify_mesh(mesh)
+    mesh = smooth_mesh(mesh, POST_SIMPLIFY_SMOOTH_ITERATIONS)
 
     o3d.io.write_triangle_mesh(str(output_path), mesh)
-    print(f"Saved smoothed mesh: {output_path}")
+    print(f"Saved smoothed + simplified mesh: {output_path}")
 
 
 if __name__ == "__main__":
