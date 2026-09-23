@@ -47,10 +47,10 @@ Usage:
     python merge_tomato_clouds.py [input_folder] [output_folder] [--no-dedup | --dedup]
 
 Defaults convert rgbd_photos/five_shots_segmented/*_tomato.ply (+ matching
-*_cone.ply) into rgbd_photos/five_shots_merged/tomato_merged.ply (voxel
-downsampled and outlier-cleaned) and tomato_merged_full.ply (deduplicated
-but not downsampled), plus a diagnostic render of the fitted circle and
-the before/after alignment.
+*_cone.ply) into rgbd_photos/five_shots_merged/tomato_merged.ply
+(deduplicated, voxel downsampled and outlier-cleaned) and
+tomato_merged_full.ply (every aligned point, before any filtering), plus a
+diagnostic render of the fitted circle and the before/after alignment.
 
 The double-layer dedup pass (step 3 above) is on by default
 (DIRECTIONAL_DEDUP_DEFAULT) -- pass --no-dedup to fall back to plain
@@ -316,21 +316,20 @@ def main():
     ordered_stems = [shots[i]["stem"] for i in merge_order]
     print(f"\nMerge order around the circle: {ordered_stems}")
 
-    total_before = sum(len(s["tomato"].points) for s in shots)
+    full = o3d.geometry.PointCloud()
+    for i in merge_order:
+        full += shots[i]["tomato"]
+
+    full_path = output_folder / "tomato_merged_full.ply"
+    o3d.io.write_point_cloud(str(full_path), full)
+    print(f"Merged cloud (every aligned point, before any filtering): {len(full.points)} points -> {full_path}")
+
     if directional_dedup:
         tomato_center = np.vstack(aligned_tomato_points).mean(axis=0)
         merged = dedup_across_shots([shots[i]["tomato"] for i in merge_order], tomato_center)
-        print(f"Merged cloud (deduplicated, not downsampled): {len(merged.points)} points "
-              f"(from {total_before} before dedup)")
+        print(f"After cross-shot dedup: {len(merged.points)} points (from {len(full.points)})")
     else:
-        merged = o3d.geometry.PointCloud()
-        for i in merge_order:
-            merged += shots[i]["tomato"]
-        print(f"Merged cloud (dedup disabled, plain concatenation): {len(merged.points)} points")
-
-    full_path = output_folder / "tomato_merged_full.ply"
-    o3d.io.write_point_cloud(str(full_path), merged)
-    print(f"  -> {full_path}")
+        merged = full
 
     merged = merged.voxel_down_sample(FINAL_VOXEL_SIZE)
     merged, _ = merged.remove_statistical_outlier(nb_neighbors=OUTLIER_NB_NEIGHBORS, std_ratio=OUTLIER_STD_RATIO)
