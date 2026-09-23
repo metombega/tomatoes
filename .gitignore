@@ -20,6 +20,9 @@ env/
  
 # Local archive / scratch
 archive/
+
+# Scan data and pipeline outputs (large binary point clouds/meshes)
+rgbd_photos/
  
 # OS files
 .DS_Store
