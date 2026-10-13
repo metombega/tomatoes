@@ -32,11 +32,11 @@ Three more cleanup passes run after that:
     without the shrinkage plain Laplacian smoothing would cause.
 
 After that, the mesh is simplified: quadric decimation collapses it down
-to a fraction of its original triangle count, which -- on top of shrinking
-the file -- rounds off a lot of the remaining small-scale bumpiness by
-construction, since it can no longer represent detail finer than the
-simplified triangle size. A short final smoothing pass cleans up whatever
-new sharp edges decimation introduces.
+to a fixed target triangle count, which -- on top of shrinking the file --
+rounds off a lot of the remaining small-scale bumpiness by construction,
+since it can no longer represent detail finer than the simplified triangle
+size. A short final smoothing pass cleans up whatever new sharp edges
+decimation introduces.
 
 Usage:
     python mesh_merged_tomato_cloud.py [input.ply] [output.ply]
@@ -64,7 +64,7 @@ NORMAL_RADIUS = 0.006
 NORMAL_MAX_NN = 30
 NORMAL_ORIENT_KNN = 50
 
-POISSON_DEPTH = 9
+POISSON_DEPTH = 7
 DENSITY_TRIM_QUANTILE = 0.002  # drop only the sparsest-supported 0.2% of vertices
 
 # A connected triangle cluster is dropped unless it has at least this
@@ -79,11 +79,13 @@ SMOOTH_ITERATIONS = 40
 TAUBIN_LAMBDA = 0.5
 TAUBIN_MU = -0.53
 
-# Quadric decimation target, as a fraction of the mesh's triangle count
-# after smoothing. Simplification is what actually gets rid of a lot of
-# the remaining fine bumpiness (it physically can't represent detail
-# smaller than the simplified triangles), on top of shrinking the file.
-SIMPLIFY_TRIANGLE_FRACTION = 0.2
+# Quadric decimation target, as an absolute triangle count. Simplification
+# is what actually gets rid of a lot of the remaining fine bumpiness (it
+# physically can't represent detail smaller than the simplified triangles),
+# on top of shrinking the file. An absolute count (rather than a fraction
+# of the pre-decimation count) gives a predictable, repeatable low-poly
+# look regardless of how many triangles Poisson happens to produce.
+SIMPLIFY_TARGET_TRIANGLES = 10000
 
 # A second Taubin pass to round off the faceted look decimation leaves
 # behind. This needs to be a real pass, not a token cleanup -- a handful
@@ -251,8 +253,7 @@ def smooth_mesh(mesh: o3d.geometry.TriangleMesh, iterations: int) -> o3d.geometr
     return mesh
 
 
-def simplify_mesh(mesh: o3d.geometry.TriangleMesh, fraction=SIMPLIFY_TRIANGLE_FRACTION) -> o3d.geometry.TriangleMesh:
-    target = max(int(len(mesh.triangles) * fraction), 4)
+def simplify_mesh(mesh: o3d.geometry.TriangleMesh, target=SIMPLIFY_TARGET_TRIANGLES) -> o3d.geometry.TriangleMesh:
     simplified = mesh.simplify_quadric_decimation(target_number_of_triangles=target)
     simplified.compute_vertex_normals()
     print(f"Simplified: {len(mesh.vertices)} -> {len(simplified.vertices)} vertices, "

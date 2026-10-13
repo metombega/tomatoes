@@ -70,7 +70,7 @@ OUTPUT_FOLDER = "rgbd_photos/five_shots_merged"
 
 # Whether the directional double-layer dedup (dedup_across_shots) runs at
 # all. Overridable per-run with --dedup / --no-dedup.
-DIRECTIONAL_DEDUP_DEFAULT = True
+DIRECTIONAL_DEDUP_DEFAULT = False
 
 FINAL_VOXEL_SIZE = 0.0004
 OUTLIER_NB_NEIGHBORS = 30
