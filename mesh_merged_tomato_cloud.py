@@ -39,7 +39,9 @@ size. A short final smoothing pass cleans up whatever new sharp edges
 decimation introduces.
 
 Usage:
-    python mesh_merged_tomato_cloud.py [input.ply] [output.ply]
+    python mesh_merged_tomato_cloud.py [input.ply] [output.ply] [target_triangles]
+
+target_triangles overrides SIMPLIFY_TARGET_TRIANGLES for this run.
 
 Defaults convert rgbd_photos/five_shots_merged/tomato_merged.ply into
 rgbd_photos/five_shots_merged/tomato_mesh.ply.
@@ -268,6 +270,7 @@ def simplify_mesh(mesh: o3d.geometry.TriangleMesh, target=SIMPLIFY_TARGET_TRIANG
 def main():
     input_path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(INPUT_PATH)
     output_path = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(OUTPUT_PATH)
+    target_triangles = int(sys.argv[3]) if len(sys.argv) > 3 else SIMPLIFY_TARGET_TRIANGLES
     output_path.parent.mkdir(parents=True, exist_ok=True)
     unsmoothed_path = output_path.with_name(f"{output_path.stem}_unsmoothed{output_path.suffix}")
 
@@ -283,7 +286,7 @@ def main():
     print(f"Saved unsmoothed mesh: {unsmoothed_path}")
 
     mesh = smooth_mesh(mesh, SMOOTH_ITERATIONS)
-    mesh = simplify_mesh(mesh)
+    mesh = simplify_mesh(mesh, target_triangles)
     mesh = smooth_mesh(mesh, POST_SIMPLIFY_SMOOTH_ITERATIONS)
 
     o3d.io.write_triangle_mesh(str(output_path), mesh)
