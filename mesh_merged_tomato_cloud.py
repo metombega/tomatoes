@@ -85,7 +85,7 @@ TAUBIN_MU = -0.53
 # on top of shrinking the file. An absolute count (rather than a fraction
 # of the pre-decimation count) gives a predictable, repeatable low-poly
 # look regardless of how many triangles Poisson happens to produce.
-SIMPLIFY_TARGET_TRIANGLES = 20000
+SIMPLIFY_TARGET_TRIANGLES = 40000
 
 # A second Taubin pass to round off the faceted look decimation leaves
 # behind. This needs to be a real pass, not a token cleanup -- a handful

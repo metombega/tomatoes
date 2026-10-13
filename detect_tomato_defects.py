@@ -23,7 +23,7 @@ from scipy.sparse.csgraph import connected_components
 from scipy.spatial import cKDTree
 
 DEFAULT_MESH = (
-    r"rgbd_photos\video_on_ratation_table_output_20261013_143512\merged\tomato_mesh.ply"
+    r"rgbd_photos\video_on_ratation_table_output_20261013_144239\merged\tomato_mesh.ply"
 )
 
 AXIS_DIM = {"x": 0, "y": 1, "z": 2}
@@ -31,7 +31,7 @@ AXIS_DIM = {"x": 0, "y": 1, "z": 2}
 NEIGHBOR_RADIUS = 0.008      # m; scale of the "local normal color" baseline
 MIN_DELTA_L = 10.0           # Lab-L drop vs. local median to count as dark
 MAX_BRIGHTER_L = 5.0         # brighter than this vs. surroundings = glare, skipped
-MIN_DELTA_AB = 8.0          # Lab a/b distance from local median (off-red blemish)
+MIN_DELTA_AB = 13.0          # Lab a/b distance from local median (off-red blemish)
 MIN_SPOT_AREA = 4e-6         # m^2 (4 mm^2); smaller clusters are noise
 POLE_FRACTION = 0.10         # ignore this fraction of height at each end
 SPOT_COLOR = (1.0, 0.0, 1.0)
