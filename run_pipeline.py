@@ -35,7 +35,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-INPUT_FOLDER = "rgbd_photos/top_and_bottom_view"
+INPUT_FOLDER = "rgbd_photos/video_on_ratation_table"
 DEFAULT_LEVELS = ["bottom", "top"]
 PLY_PATTERN = "*.ply"
 

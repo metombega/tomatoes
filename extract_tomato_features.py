@@ -20,8 +20,7 @@ from detect_tomato_defects import detect_defects
 from symmetry_calculator import compute_axis_symmetry
 
 DEFAULT_MESH = (
-    r"rgbd_photos\video_on_ratation_table_output_20261013_105001"
-    r"\merged\tomato_mesh.ply"
+    r"rgbd_photos\video_on_ratation_table_output_20261013_143512\merged\tomato_mesh.ply"
 )
 
 # DEFAULT_MESH = (

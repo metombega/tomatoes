@@ -23,8 +23,7 @@ from scipy.sparse.csgraph import connected_components
 from scipy.spatial import cKDTree
 
 DEFAULT_MESH = (
-    r"rgbd_photos\video_on_ratation_table_output_20261013_105001"
-    r"\merged\tomato_mesh.ply"
+    r"rgbd_photos\video_on_ratation_table_output_20261013_143512\merged\tomato_mesh.ply"
 )
 
 AXIS_DIM = {"x": 0, "y": 1, "z": 2}
