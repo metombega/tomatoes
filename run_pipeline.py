@@ -37,6 +37,10 @@ from pathlib import Path
 
 INPUT_FOLDER = "rgbd_photos/top_and_bottom_view"
 DEFAULT_LEVELS = ["bottom", "top"]
+
+# The stacked multi-height cloud is less accurate than a single-ring scan, so
+# it gets a more aggressive (lower-poly, smoother) final mesh.
+STACKED_SIMPLIFY_TARGET_TRIANGLES = 15000
 PLY_PATTERN = "*.ply"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -83,7 +87,8 @@ def main():
         run("merge_stacked_levels.py", segmented_folder, merged_folder, "--levels", *levels)
     else:
         run("merge_tomato_clouds.py", segmented_folder, merged_folder)
-    run("mesh_merged_tomato_cloud.py", merged_folder / "tomato_merged.ply", mesh_path)
+    mesh_args = [STACKED_SIMPLIFY_TARGET_TRIANGLES] if levels else []
+    run("mesh_merged_tomato_cloud.py", merged_folder / "tomato_merged.ply", mesh_path, *mesh_args)
 
     print(f"\nPipeline complete -> {output_folder}")
 
