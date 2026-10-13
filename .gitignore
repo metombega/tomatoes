@@ -23,6 +23,8 @@ archive/
 
 # Scan data and pipeline outputs (large binary point clouds/meshes)
 rgbd_photos/
+*.ply
+*.obj
  
 # OS files
 .DS_Store
