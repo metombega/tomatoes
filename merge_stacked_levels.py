@@ -19,10 +19,11 @@ a circle can be fitted).
 
 Usage:
     python merge_stacked_levels.py [input_folder] [output_folder]
-        [--levels bottom top] [--gap-inches 0] [--flip]
+        [--levels bottom top] [--gap-inches 0] [--flip] [--no-refine]
 
 --levels lists level filename prefixes from lowest to highest. --flip stacks
-in the opposite axis direction if "up" came out the wrong way.
+in the opposite axis direction if "up" came out the wrong way. --no-refine skips
+the per-shot refinement (refine_shots).
 """
 
 import sys
@@ -30,6 +31,8 @@ from pathlib import Path
 
 import numpy as np
 import open3d as o3d
+from scipy.optimize import least_squares
+from scipy.spatial import cKDTree
 
 from merge_tomato_clouds import (
     FINAL_VOXEL_SIZE, OUTLIER_NB_NEIGHBORS, OUTLIER_STD_RATIO,
@@ -42,6 +45,18 @@ OUTPUT_FOLDER = "rgbd_photos/top_and_bottom_view_merged"
 DEFAULT_LEVELS = ["bottom", "top"]
 GAP_INCHES = 0.0
 INCH_TO_M = 0.0254
+
+# Cone-constrained shot refinement (see refine_shots): how far each shot may
+# move beyond its cone-peak registration. Cone-peak noise of ~0.5 mm shows up
+# as ~0.7 deg of turntable angle (plus a little translation); anything bigger
+# than these bounds is the optimizer sliding the near-spherical tomato around,
+# not a real correction.
+REFINE_ROUNDS = 3
+REFINE_MAX_ROT_DEG = 0.5
+REFINE_MAX_SHIFT_M = 0.001
+REFINE_TRIM_M = 0.004
+REFINE_STRIDE = 4
+
 
 
 def load_level(folder, level):
@@ -56,7 +71,7 @@ def load_level(folder, level):
     return shots
 
 
-def register_level(shots, label):
+def register_level(shots, label, refine=True):
     """Fit the level's circle, orient its axis toward the tomato, rotate all
     shots onto the first shot's turntable angle. Returns the level's cloud
     (all shots concatenated, still in the scanner frame) and the circle
@@ -81,11 +96,43 @@ def register_level(shots, label):
         rotate_about_axis(s["tomato"], normal, center, angles[0] - angle)
         print(f"[{label}] {s['stem']}: rotated {np.degrees(angles[0] - angle):+.2f} deg")
 
+    circle = {"center": center, "radius": radius, "normal": normal, "e1": e1, "e2": e2,
+              "ref_angle": angles[0], "peaks": peaks}
+    if refine:
+        refine_shots(shots, circle)
+        print(f"[{label}] refined shots against each other (<= {REFINE_MAX_ROT_DEG} deg, "
+              f"<= {REFINE_MAX_SHIFT_M * 1000:g} mm)")
+
     cloud = o3d.geometry.PointCloud()
     for s in shots:
         cloud += s["tomato"]
-    return cloud, {"center": center, "radius": radius, "normal": normal, "e1": e1, "e2": e2,
-                   "ref_angle": angles[0], "peaks": peaks}
+    return cloud, circle
+
+
+def refine_shots(shots, circle):
+    """Tighten the shots of one level against each other. Each shot is
+    nudged -- a bounded extra rotation about the fitted turntable axis plus a
+    bounded 3D shift -- to minimize its (robust, trimmed) distance to all the
+    other shots. The bounds keep the cone-peak registration in charge; this
+    only absorbs its residual noise."""
+    axis, center = circle["normal"], circle["center"]
+    lo = np.r_[-REFINE_MAX_ROT_DEG, [-REFINE_MAX_SHIFT_M] * 3]
+    for _ in range(REFINE_ROUNDS):
+        for i, s in enumerate(shots):
+            others = np.vstack([np.asarray(o["tomato"].points)[::2] for j, o in enumerate(shots) if j != i])
+            tree = cKDTree(others)
+            pts = np.asarray(s["tomato"].points)[::REFINE_STRIDE]
+
+            def cost(p):
+                R = o3d.geometry.get_rotation_matrix_from_axis_angle(axis * np.radians(p[0]))
+                d = tree.query((pts - center) @ R.T + center + p[1:])[0]
+                return np.minimum(d, REFINE_TRIM_M)
+
+            sol = least_squares(cost, np.zeros(4), bounds=(lo, -lo), x_scale=np.r_[0.5, [0.0005] * 3],
+                                loss="soft_l1", f_scale=0.001).x
+            R = o3d.geometry.get_rotation_matrix_from_axis_angle(axis * np.radians(sol[0]))
+            s["tomato"].rotate(R, center=center)
+            s["tomato"].translate(sol[1:])
 
 
 def frame(circle):
@@ -112,6 +159,9 @@ def main():
     flip = "--flip" in args
     if flip:
         args.remove("--flip")
+    refine = "--no-refine" not in args
+    if not refine:
+        args.remove("--no-refine")
     gap_inches, levels = GAP_INCHES, DEFAULT_LEVELS
     if "--gap-inches" in args:
         i = args.index("--gap-inches")
@@ -133,13 +183,15 @@ def main():
     full = o3d.geometry.PointCloud()
     prev = None
     for k, level in enumerate(levels):
-        cloud, circle = register_level(load_level(input_folder, level), label=level)
+        cloud, circle = register_level(load_level(input_folder, level), label=level, refine=refine)
         if k == 0:
             prev = circle
         else:
             prev = stack_onto(cloud, circle, prev, -gap_m if flip else gap_m)
             print(f"[{level}] stacked {gap_inches} in {'against' if flip else 'along'} the up-axis, "
                   f"circle center now {prev['center'].round(4)}")
+        level_path = output_folder / f"level_{level}.ply"
+        o3d.io.write_point_cloud(str(level_path), cloud)
         full += cloud
 
     full_path = output_folder / "tomato_merged_full.ply"
