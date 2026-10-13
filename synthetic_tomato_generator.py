@@ -2,6 +2,78 @@ import numpy as np
 import open3d as o3d
 
 
+def _hsv_to_rgb(h, s, v):
+    """
+    Vectorized HSV -> RGB conversion (h, s, v in [0, 1], any shape).
+    """
+    h = np.mod(h, 1.0)
+    s = np.clip(s, 0.0, 1.0)
+    v = np.clip(v, 0.0, 1.0)
+
+    i = np.floor(h * 6.0)
+    f = h * 6.0 - i
+    p = v * (1.0 - s)
+    q = v * (1.0 - f * s)
+    t = v * (1.0 - (1.0 - f) * s)
+    i_mod = i.astype(int) % 6
+
+    conditions = [i_mod == k for k in range(6)]
+    r = np.select(conditions, [v, q, p, p, t, v])
+    g = np.select(conditions, [t, v, v, q, p, p])
+    b = np.select(conditions, [p, p, t, v, v, q])
+
+    return np.stack([r, g, b], axis=-1)
+
+
+def _tomato_vertex_colors(theta_per_vertex, phi_per_vertex, rng, ripeness, consistency, richness):
+    """
+    Generates per-vertex tomato colors from three human-meaningful sliders:
+
+    - ripeness (0..1):    green -> red (passes naturally through yellow/orange,
+                           like a real tomato ripening)
+    - consistency (0..1): 1.0 = even color all over; lower values create
+                           blotchy patches where local ripeness drifts from
+                           the target (unevenly ripened look)
+    - richness (0..1):    0.0 = dull/pale/washed-out color; 1.0 = deep,
+                           saturated color
+    """
+
+    ripeness = np.clip(ripeness, 0.0, 1.0)
+    consistency = np.clip(consistency, 0.0, 1.0)
+    richness = np.clip(richness, 0.0, 1.0)
+
+    n = len(theta_per_vertex)
+    blotchiness = 1.0 - consistency
+
+    # Smooth, blob-like spatial noise built from a handful of random
+    # sinusoids over the (theta, phi) surface -> looks like patches, not static.
+    num_blotches = rng.integers(3, 7)
+    blotch = np.zeros(n)
+    for _ in range(num_blotches):
+        freq_theta = rng.uniform(1, 4)
+        freq_phi = rng.uniform(1, 4)
+        phase_theta = rng.uniform(0, 2 * np.pi)
+        phase_phi = rng.uniform(0, 2 * np.pi)
+        blotch += np.sin(freq_theta * theta_per_vertex + phase_theta) * np.sin(
+            freq_phi * phi_per_vertex + phase_phi
+        )
+    blotch /= num_blotches  # roughly in [-1, 1]
+
+    local_ripeness = np.clip(ripeness + blotchiness * 0.6 * blotch, 0.0, 1.0)
+
+    # Hue: green (~0.30) -> red (~0.0), sweeping through yellow/orange on the way.
+    hue = 0.30 * (1.0 - local_ripeness)
+
+    # Richness sets the overall saturation/value target (dull vs. rich),
+    # with a touch of natural per-vertex jitter plus extra blotch-driven
+    # unevenness when consistency is low.
+    jitter = rng.uniform(-0.03, 0.03, n)
+    saturation = 0.35 + 0.55 * richness + jitter + blotchiness * 0.15 * blotch
+    value = 0.45 + 0.25 * (1.0 - richness) + jitter - blotchiness * 0.10 * blotch
+
+    return _hsv_to_rgb(hue, saturation, value)
+
+
 def create_random_tomato_mesh(
     seed=None,
     n_theta=160,
@@ -11,6 +83,9 @@ def create_random_tomato_mesh(
     noise_strength=0.045,
     lobe_strength=0.08,
     stem_indent_strength=0.18,
+    ripeness=1.0,
+    consistency=1.0,
+    richness=1.0,
 ):
     """
     Creates a random tomato-like triangle mesh.
@@ -18,6 +93,11 @@ def create_random_tomato_mesh(
     Coordinate system:
     - y is the vertical axis
     - x-z is the horizontal cross-section
+
+    Color sliders (all 0..1):
+    - ripeness: green -> red
+    - consistency: 1.0 = even color, lower = blotchy/uneven patches
+    - richness: 0.0 = dull/pale, 1.0 = deep/saturated
     """
 
     rng = np.random.default_rng(seed)
@@ -94,11 +174,12 @@ def create_random_tomato_mesh(
     mesh.compute_vertex_normals()
     mesh.compute_triangle_normals()
 
-    # Tomato red-ish vertex colors
-    colors = np.zeros((len(vertices), 3))
-    colors[:, 0] = 0.85 + rng.uniform(-0.05, 0.05, len(vertices))  # red
-    colors[:, 1] = 0.12 + rng.uniform(-0.03, 0.03, len(vertices))  # green
-    colors[:, 2] = 0.08 + rng.uniform(-0.02, 0.02, len(vertices))  # blue
+    # Tomato vertex colors driven by ripeness / consistency / richness
+    phi_per_vertex = np.repeat(phi_vals, n_theta)
+    theta_per_vertex = np.tile(theta_vals, n_phi)
+    colors = _tomato_vertex_colors(
+        theta_per_vertex, phi_per_vertex, rng, ripeness, consistency, richness
+    )
     colors = np.clip(colors, 0, 1)
 
     mesh.vertex_colors = o3d.utility.Vector3dVector(colors)
@@ -157,6 +238,9 @@ if __name__ == "__main__":
         noise_strength=0.0,#0.035,
         lobe_strength=0.0, #0.055,
         stem_indent_strength=0.22,
+        ripeness=0.9,     # 0.0 = green, 1.0 = red
+        consistency=0.75, # 0.0 = blotchy/uneven, 1.0 = uniform color
+        richness=0.8,    # 0.0 = dull, 1.0 = rich/saturated
     )
 
     # tomato_mesh = add_simple_stem(tomato_mesh, seed=seed)
