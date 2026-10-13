@@ -4,6 +4,8 @@ colored turntable scans, chaining the individual pipeline scripts:
 
   1. segment_tomato_cone.py  -> per-shot tomato-only and cone-only clouds
   2. merge_tomato_clouds.py  -> cone-circle registered, merged cloud
+     (or merge_stacked_levels.py when the folder holds several camera
+     heights, i.e. files named bottom_*.ply and top_*.ply)
   3. mesh_merged_tomato_cloud.py -> final mesh
 
 Each input *.ply is a complete, already-fused scan (e.g. from a
@@ -14,7 +16,13 @@ expects at least 3 of them (5 is typical) so merge_tomato_clouds.py can fit
 a turntable circle through their cone-marker peaks.
 
 Usage:
-    python run_pipeline.py [input_folder] [output_folder]
+    python run_pipeline.py [input_folder] [output_folder] [--levels bottom top]
+
+--levels lists filename prefixes of the camera heights, lowest first; each
+level is registered on its own turntable circle and the levels are then
+overlaid (0 in apart, see merge_stacked_levels.py). Without it, the stacked
+merge is used automatically if the folder has files for every level in
+DEFAULT_LEVELS, else the single-ring merge.
 
 Defaults: input_folder=rgbd_photos/five_shots, output_folder=<input_folder>_output_<timestamp>
 
@@ -27,7 +35,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-INPUT_FOLDER = "rgbd_photos/video_on_ratation_table"
+INPUT_FOLDER = "rgbd_photos/top_and_bottom_view"
+DEFAULT_LEVELS = ["bottom", "top"]
 PLY_PATTERN = "*.ply"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -40,12 +49,25 @@ def run(script, *args):
 
 
 def main():
-    input_folder = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(INPUT_FOLDER)
+    args = sys.argv[1:]
+    levels = None
+    if "--levels" in args:
+        i = args.index("--levels")
+        j = i + 1
+        while j < len(args) and not args[j].startswith("--"):
+            j += 1
+        levels = args[i + 1:j]
+        del args[i:j]
+
+    input_folder = Path(args[0]) if len(args) > 0 else Path(INPUT_FOLDER)
     if not input_folder.is_dir():
         raise SystemExit(f"Input folder not found: {input_folder}")
 
-    if len(sys.argv) > 2:
-        output_folder = Path(sys.argv[2])
+    if levels is None and all(any(input_folder.glob(f"{l}_*.ply")) for l in DEFAULT_LEVELS):
+        levels = DEFAULT_LEVELS
+
+    if len(args) > 1:
+        output_folder = Path(args[1])
     else:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_folder = input_folder.parent / f"{input_folder.name}_output_{timestamp}"
@@ -57,7 +79,10 @@ def main():
     output_folder.mkdir(parents=True, exist_ok=True)
 
     run("segment_tomato_cone.py", input_folder, segmented_folder, PLY_PATTERN)
-    run("merge_tomato_clouds.py", segmented_folder, merged_folder)
+    if levels:
+        run("merge_stacked_levels.py", segmented_folder, merged_folder, "--levels", *levels)
+    else:
+        run("merge_tomato_clouds.py", segmented_folder, merged_folder)
     run("mesh_merged_tomato_cloud.py", merged_folder / "tomato_merged.ply", mesh_path)
 
     print(f"\nPipeline complete -> {output_folder}")
