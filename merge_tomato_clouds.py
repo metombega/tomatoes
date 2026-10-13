@@ -44,7 +44,7 @@ we no longer get to assume the nominal step angles are already known:
      survived. See dedup_across_shots.
 
 Usage:
-    python merge_tomato_clouds.py [input_folder] [output_folder] [--no-dedup | --dedup]
+    python merge_tomato_clouds.py [input_folder] [output_folder] [--no-dedup | --dedup] [--no-refine]
 
 Defaults convert rgbd_photos/five_shots_segmented/*_tomato.ply (+ matching
 *_cone.ply) into rgbd_photos/five_shots_merged/tomato_merged.ply
@@ -63,10 +63,28 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import open3d as o3d
+from scipy.optimize import least_squares
 from scipy.spatial import cKDTree
 
-INPUT_FOLDER = "rgbd_photos/five_shots_segmented"
-OUTPUT_FOLDER = "rgbd_photos/five_shots_merged"
+INPUT_FOLDER = "rgbd_photos/video_on_ratation_table_output_20261013_105001/segmented"
+OUTPUT_FOLDER = "rgbd_photos/video_on_ratation_table_output_20261013_105001/merged"
+
+# Refinement after the cone-circle alignment (see refine_alignment).
+# The cone peak is a single noisy point lever-armed out to the tomato, so
+# the circle fit leaves ~0.5-1 mm of residual misalignment between shots,
+# visible as a small gap/double shell at the seams. Each shot is therefore
+# re-registered against the others, but only with the freedom the rig
+# physically has: a rotation about the fitted turntable axis plus a small
+# translation (the tomato can shift a little on the platform). Free 6-DOF
+# ICP is deliberately avoided: the tomato is nearly spherical, so ICP can
+# rotate a shot a few degrees about the tomato's own center for free, which
+# slides surface texture/color tangentially for no geometric gain.
+REFINE_DEFAULT = True
+REFINE_ROUNDS = 4
+REFINE_VOXEL = 0.001
+REFINE_MAX_DIST = 0.003
+REFINE_MAX_SHIFT = 0.004
+REFINE_MAX_ANGLE_DEG = 6.0
 
 # Whether the directional double-layer dedup (dedup_across_shots) runs at
 # all. Overridable per-run with --dedup / --no-dedup.
@@ -156,6 +174,69 @@ def angle_around_circle(point, center, e1, e2):
 def rotate_about_axis(pcd, axis, center, angle_rad):
     R = o3d.geometry.get_rotation_matrix_from_axis_angle(axis * angle_rad)
     return pcd.rotate(R, center=center)
+
+
+def _prep_for_refine(pcd):
+    down = pcd.voxel_down_sample(REFINE_VOXEL)
+    down.estimate_normals(o3d.geometry.KDTreeSearchParamHybrid(radius=REFINE_VOXEL * 5, max_nn=30))
+    return down
+
+
+def overlap_residuals(clouds, max_dist=0.004, min_pts=200):
+    """Median nearest-neighbor distance (mm) over each pair's overlapping
+    points, keyed by (i, j). Used to report how well shots line up."""
+    trees = [cKDTree(np.asarray(c.points)) for c in clouds]
+    out = {}
+    for i, a in enumerate(clouds):
+        pts = np.asarray(a.points)
+        for j in range(i + 1, len(clouds)):
+            d, _ = trees[j].query(pts)
+            near = d < max_dist
+            if near.sum() >= min_pts:
+                out[(i, j)] = float(np.median(d[near]) * 1000)
+    return out
+
+
+def refine_alignment(clouds, stems, axis, center, fixed_idx=0):
+    """Refine each shot against the union of all the others (several
+    Gauss-Seidel rounds: later shots see earlier shots' corrections) by
+    least-squares point-to-plane distance over 4 parameters: a rotation
+    about the turntable axis and a translation, both bounded. `fixed_idx`
+    (the reference shot) never moves, otherwise the whole set could drift
+    together. Modifies `clouds` in place."""
+    totals = [np.zeros(4) for _ in clouds]
+    lo = [-np.radians(REFINE_MAX_ANGLE_DEG)] + [-REFINE_MAX_SHIFT] * 3
+    hi = [np.radians(REFINE_MAX_ANGLE_DEG)] + [REFINE_MAX_SHIFT] * 3
+
+    for _ in range(REFINE_ROUNDS):
+        for i, cloud in enumerate(clouds):
+            if i == fixed_idx:
+                continue
+            others = o3d.geometry.PointCloud()
+            for j, c in enumerate(clouds):
+                if j != i:
+                    others += c
+            target = _prep_for_refine(others)
+            tgt_pts, tgt_normals = np.asarray(target.points), np.asarray(target.normals)
+            tree = cKDTree(tgt_pts)
+            src = np.asarray(_prep_for_refine(cloud).points)
+
+            def residuals(x):
+                R = o3d.geometry.get_rotation_matrix_from_axis_angle(axis * x[0])
+                moved = (src - center) @ R.T + center + x[1:]
+                d, k = tree.query(moved)
+                r = np.einsum("ij,ij->i", moved - tgt_pts[k], tgt_normals[k])
+                return np.where(d < REFINE_MAX_DIST, r, 0.0)
+
+            sol = least_squares(residuals, np.zeros(4), x_scale=[0.01, 0.001, 0.001, 0.001],
+                                loss="soft_l1", f_scale=0.0007, bounds=(lo, hi))
+            R = o3d.geometry.get_rotation_matrix_from_axis_angle(axis * sol.x[0])
+            moved = (np.asarray(cloud.points) - center) @ R.T + center + sol.x[1:]
+            cloud.points = o3d.utility.Vector3dVector(moved)
+            totals[i] += sol.x
+
+    for stem, x in zip(stems, totals):
+        print(f"  {stem}: rotated {np.degrees(x[0]):+.2f} deg more, shifted {(x[1:] * 1000).round(2)} mm")
 
 
 def _prune_against(candidate_pts, reference_pts, tomato_center, radius, cos_threshold):
@@ -261,6 +342,10 @@ def main():
     if "--no-dedup" in args:
         args.remove("--no-dedup")
         directional_dedup = False
+    use_refine = REFINE_DEFAULT
+    if "--no-refine" in args:
+        args.remove("--no-refine")
+        use_refine = False
     if "--dedup" in args:
         args.remove("--dedup")
         directional_dedup = True
@@ -311,6 +396,19 @@ def main():
 
     save_overlay(aligned_tomato_points, output_folder / "after_registration.png",
                  "After circle-based turntable-angle alignment")
+
+    def report(label):
+        res = overlap_residuals([s["tomato"] for s in shots])
+        print(f"Overlap gap {label} (median mm per overlapping pair): "
+              + ", ".join(f"{i + 1}-{j + 1}: {v:.2f}" for (i, j), v in res.items()))
+
+    report("after circle alignment")
+    if use_refine:
+        print("\nRefining shot poses against each other:")
+        refine_alignment([s["tomato"] for s in shots], [s["stem"] for s in shots], normal, center, fixed_idx=ref_idx)
+        report("after refinement")
+        aligned_tomato_points = [np.asarray(s["tomato"].points) for s in shots]
+        save_overlay(aligned_tomato_points, output_folder / "after_refinement.png", "After pose refinement")
 
     merge_order = np.argsort(angles)
     ordered_stems = [shots[i]["stem"] for i in merge_order]

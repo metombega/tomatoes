@@ -85,7 +85,7 @@ TAUBIN_MU = -0.53
 # on top of shrinking the file. An absolute count (rather than a fraction
 # of the pre-decimation count) gives a predictable, repeatable low-poly
 # look regardless of how many triangles Poisson happens to produce.
-SIMPLIFY_TARGET_TRIANGLES = 10000
+SIMPLIFY_TARGET_TRIANGLES = 40000
 
 # A second Taubin pass to round off the faceted look decimation leaves
 # behind. This needs to be a real pass, not a token cleanup -- a handful
@@ -255,6 +255,10 @@ def smooth_mesh(mesh: o3d.geometry.TriangleMesh, iterations: int) -> o3d.geometr
 
 def simplify_mesh(mesh: o3d.geometry.TriangleMesh, target=SIMPLIFY_TARGET_TRIANGLES) -> o3d.geometry.TriangleMesh:
     simplified = mesh.simplify_quadric_decimation(target_number_of_triangles=target)
+    # Decimation can leave vertices no triangle uses; the following Taubin
+    # smoothing turns those into NaN (no neighbors to average), which breaks
+    # any downstream KD-tree on the vertices.
+    simplified.remove_unreferenced_vertices()
     simplified.compute_vertex_normals()
     print(f"Simplified: {len(mesh.vertices)} -> {len(simplified.vertices)} vertices, "
           f"{len(mesh.triangles)} -> {len(simplified.triangles)} triangles")
